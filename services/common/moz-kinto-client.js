@@ -45,6 +45,8 @@ var _get = function get(_x, _x2, _x3) { var _again = true; _function: while (_ag
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
 
+function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) arr2[i] = arr[i]; return arr2; } else { return Array.from(arr); } }
+
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
 function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
@@ -77,7 +79,10 @@ var statements = {
 
   "getRecord": "\n    SELECT record\n      FROM collection_data\n        WHERE collection_name = :collection_name\n        AND record_id = :record_id;",
 
-  "listRecords": "\n    SELECT record\n      FROM collection_data\n        WHERE collection_name = :collection_name;"
+  "listRecords": "\n    SELECT record\n      FROM collection_data\n        WHERE collection_name = :collection_name;",
+
+  "importData": "\n    REPLACE INTO collection_data (collection_name, record_id, record)\n      VALUES (:collection_name, :record_id, :record);"
+
 };
 
 var createStatements = ["createCollectionData", "createCollectionMetadata", "createCollectionDataRecordIdIndex"];
@@ -227,6 +232,61 @@ var FirefoxAdapter = (function (_BaseAdapter) {
           records.push(JSON.parse(row.getResultByName("record")));
         }
         return records;
+      });
+    }
+  }, {
+    key: "import",
+    value: function _import(records) {
+      var connection = this._connection;
+      var collection_name = this.collection;
+      return Task.spawn(function* () {
+        yield connection.executeTransaction(function* doImport() {
+          var _iteratorNormalCompletion2 = true;
+          var _didIteratorError2 = false;
+          var _iteratorError2 = undefined;
+
+          try {
+            for (var _iterator2 = records[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
+              var record = _step2.value;
+
+              var _params = {
+                collection_name: collection_name,
+                record_id: record.id,
+                record: JSON.stringify(record)
+              };
+              yield connection.execute(statements.importData, _params);
+            }
+          } catch (err) {
+            _didIteratorError2 = true;
+            _iteratorError2 = err;
+          } finally {
+            try {
+              if (!_iteratorNormalCompletion2 && _iterator2["return"]) {
+                _iterator2["return"]();
+              }
+            } finally {
+              if (_didIteratorError2) {
+                throw _iteratorError2;
+              }
+            }
+          }
+
+          var lastModified = Math.max.apply(Math, _toConsumableArray(records.map(record => record.last_modified)));
+          var params = {
+            collection_name: collection_name
+          };
+          var previousLastModified = yield connection.execute(statements.getLastModified, params).then(result => {
+            return result ? result[0].getResultByName('last_modified') : -1;
+          });
+          if (lastModified > previousLastModified) {
+            var _params2 = {
+              collection_name: collection_name,
+              last_modified: lastModified
+            };
+            yield connection.execute(statements.saveLastModified, _params2);
+          }
+        });
+        return records.length;
       });
     }
   }, {
@@ -1941,6 +2001,18 @@ var BaseAdapter = (function () {
     value: function getLastModified() {
       throw new Error("Not Implemented.");
     }
+
+    /**
+     * Import given records.
+     *
+     * @abstract
+     * @return {Promise}
+     */
+  }, {
+    key: "import",
+    value: function _import(records) {
+      throw new Error("Not Implemented.");
+    }
   }]);
 
   return BaseAdapter;
@@ -2718,7 +2790,7 @@ var Collection = (function () {
      *
      * Options:
      * - {Boolean} virtual: When set to `true`, doesn't actually delete the record,
-     *   update its `_status` attribute to `deleted` instead.
+     *   update its `_status` attribute to `deleted` instead (default: true)
      *
      * @param  {String} id       The record's Id.
      * @param  {Object} options  The options object.
@@ -2834,7 +2906,8 @@ var Collection = (function () {
   }, {
     key: "_importChange",
     value: function _importChange(change) {
-      var _decodedChange, decodePromise;
+      var _decodedChange = undefined,
+          decodePromise = undefined;
       // if change is a deletion, skip decoding
       if (change.deleted) {
         decodePromise = Promise.resolve(change);
@@ -2931,7 +3004,7 @@ var Collection = (function () {
   }, {
     key: "resetSyncStatus",
     value: function resetSyncStatus() {
-      var _count;
+      var _count = undefined;
       return this.list({}, { includeDeleted: true }).then(res => {
         return Promise.all(res.data.map(r => {
           // Garbage collect deleted records.
@@ -2961,7 +3034,7 @@ var Collection = (function () {
   }, {
     key: "gatherLocalChanges",
     value: function gatherLocalChanges() {
-      var _toDelete;
+      var _toDelete = undefined;
       return this.list({}, { includeDeleted: true }).then(res => {
         return res.data.reduce((acc, record) => {
           if (record._status === "deleted" && !record.last_modified) {
@@ -3174,6 +3247,49 @@ var Collection = (function () {
         return this.pullChanges(result, options);
       });
     }
+
+    /**
+     * Synchronize remote and local data. The promise will resolve with a
+     * {@link SyncResultObject}, though will reject:
+     *
+     * - if the server is currently backed off;
+     * - if the server has been detected flushed.
+     *
+     * Options:
+     * - {Object} headers: HTTP headers to attach to outgoing requests.
+     * - {Collection.strategy} strategy: See {@link Collection.strategy}.
+     * - {Boolean} ignoreBackoff: Force synchronization even if server is currently
+     *   backed off.
+     *
+     * @param  {Object} options Options.
+     * @return {Promise}
+     */
+  }, {
+    key: "import",
+    value: function _import(records) {
+      var reject = msg => Promise.reject(new Error(msg));
+      if (!(records instanceof Array)) {
+        return reject("Records is not an array.");
+      }
+
+      if (!records.every(record => {
+        return record.id && this.idSchema.validate(record.id);
+      })) {
+        return reject("Record has invalid ID.");
+      }
+
+      if (!records.every(record => record.last_modified)) {
+        return reject("Record has no last_modified value.");
+      }
+
+      var newRecords = records.map(record => {
+        return Object.assign({}, record, {
+          _status: "synced"
+        });
+      });
+
+      return this.db["import"](newRecords);
+    }
   }, {
     key: "name",
     get: function get() {
@@ -3350,7 +3466,10 @@ var HTTP = (function () {
     value: function request(url) {
       var options = arguments.length <= 1 || arguments[1] === undefined ? { headers: {} } : arguments[1];
 
-      var response, status, statusText, headers;
+      var response = undefined,
+          status = undefined,
+          statusText = undefined,
+          headers = undefined;
       // Ensure default request headers are always set
       options.headers = Object.assign({}, HTTP.DEFAULT_REQUEST_HEADERS, options.headers);
       options.mode = this.requestMode;
@@ -3401,7 +3520,7 @@ var HTTP = (function () {
       if (!alertHeader) {
         return;
       }
-      var alert;
+      var alert = undefined;
       try {
         alert = JSON.parse(alertHeader);
       } catch (err) {
@@ -3414,7 +3533,7 @@ var HTTP = (function () {
   }, {
     key: "_checkForBackoffHeader",
     value: function _checkForBackoffHeader(status, headers) {
-      var backoffMs;
+      var backoffMs = undefined;
       var backoffSeconds = parseInt(headers.get("Backoff"), 10);
       if (backoffSeconds > 0) {
         backoffMs = new Date().getTime() + backoffSeconds * 1000;
