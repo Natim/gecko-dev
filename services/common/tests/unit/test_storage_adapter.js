@@ -141,16 +141,16 @@ function test_collection_operations() {
     yield adapter.close();
   });
 
-  // test import records
+  // test loadDump(records)
   add_task(function* test_kinto_import_records() {
     let adapter = do_get_kinto_adapter();
     yield adapter.open();
     let record1 = {id: 1, foo: "bar"};
     let record2 = {id: 2, foo: "baz"};
-    let impactedRecords = yield adapter.import([
+    let impactedRecords = yield adapter.loadDump([
       record1, record2
     ]);
-    do_check_eq(impactedRecords, 2);
+    do_check_eq(impactedRecords.length, 2);
     let newRecord1 = yield adapter.get("1");
     // ensure the record is the same as when it was added
     deepEqual(record1, newRecord1);
@@ -166,12 +166,12 @@ function test_collection_operations() {
     yield adapter.clear();
     records = yield adapter.list();
     do_check_eq(records.length, 0);
-    let impactedRecords = yield adapter.import([
+    let impactedRecords = yield adapter.loadDump([
       {id: 1, foo: "bar"},
       {id: 2, foo: "baz"},
     ]);
-    do_check_eq(impactedRecords, 2);
-    yield adapter.import([
+    do_check_eq(impactedRecords.length, 2);
+    yield adapter.loadDump([
       {id: 1, foo: "baz"},
       {id: 3, foo: "bab"},
     ]);
@@ -185,7 +185,7 @@ function test_collection_operations() {
   add_task(function* test_import_updates_lastModified() {
     let adapter = do_get_kinto_adapter();
     yield adapter.open();
-    let impactedRecords = yield adapter.import([
+    yield adapter.loadDump([
       {id: 1, foo: "bar", last_modified: 1457896541},
       {id: 2, foo: "baz", last_modified: 1458796542},
     ]);
@@ -199,7 +199,7 @@ function test_collection_operations() {
     yield adapter.open();
     yield adapter.saveLastModified(1458796543);
 
-    let impactedRecords = yield adapter.import([
+    yield adapter.loadDump([
       {id: 1, foo: "bar", last_modified: 1457896541},
       {id: 2, foo: "baz", last_modified: 1458796542},
     ]);
