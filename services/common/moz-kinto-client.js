@@ -41,7 +41,7 @@ Object.defineProperty(exports, "__esModule", {
 
 var _createClass = (function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; })();
 
-var _get = function get(_x, _x2, _x3) { var _again = true; _function: while (_again) { var object = _x, property = _x2, receiver = _x3; desc = parent = getter = undefined; _again = false; if (object === null) object = Function.prototype; var desc = Object.getOwnPropertyDescriptor(object, property); if (desc === undefined) { var parent = Object.getPrototypeOf(object); if (parent === null) { return undefined; } else { _x = parent; _x2 = property; _x3 = receiver; _again = true; continue _function; } } else if ("value" in desc) { return desc.value; } else { var getter = desc.get; if (getter === undefined) { return undefined; } return getter.call(receiver); } } };
+var _get = function get(_x, _x2, _x3) { var _again = true; _function: while (_again) { var object = _x, property = _x2, receiver = _x3; _again = false; if (object === null) object = Function.prototype; var desc = Object.getOwnPropertyDescriptor(object, property); if (desc === undefined) { var parent = Object.getPrototypeOf(object); if (parent === null) { return undefined; } else { _x = parent; _x2 = property; _x3 = receiver; _again = true; desc = parent = undefined; continue _function; } } else if ("value" in desc) { return desc.value; } else { var getter = desc.get; if (getter === undefined) { return undefined; } return getter.call(receiver); } } };
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
 
@@ -235,8 +235,8 @@ var FirefoxAdapter = (function (_BaseAdapter) {
       });
     }
   }, {
-    key: "import",
-    value: function _import(records) {
+    key: "loadDump",
+    value: function loadDump(records) {
       var connection = this._connection;
       var collection_name = this.collection;
       return Task.spawn(function* () {
@@ -286,7 +286,7 @@ var FirefoxAdapter = (function (_BaseAdapter) {
             yield connection.execute(statements.saveLastModified, _params2);
           }
         });
-        return records.length;
+        return records;
       });
     }
   }, {
@@ -344,7 +344,7 @@ Object.defineProperty(exports, "__esModule", {
 
 var _createClass = (function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; })();
 
-var _get = function get(_x2, _x3, _x4) { var _again = true; _function: while (_again) { var object = _x2, property = _x3, receiver = _x4; desc = parent = getter = undefined; _again = false; if (object === null) object = Function.prototype; var desc = Object.getOwnPropertyDescriptor(object, property); if (desc === undefined) { var parent = Object.getPrototypeOf(object); if (parent === null) { return undefined; } else { _x2 = parent; _x3 = property; _x4 = receiver; _again = true; continue _function; } } else if ("value" in desc) { return desc.value; } else { var getter = desc.get; if (getter === undefined) { return undefined; } return getter.call(receiver); } } };
+var _get = function get(_x2, _x3, _x4) { var _again = true; _function: while (_again) { var object = _x2, property = _x3, receiver = _x4; _again = false; if (object === null) object = Function.prototype; var desc = Object.getOwnPropertyDescriptor(object, property); if (desc === undefined) { var parent = Object.getPrototypeOf(object); if (parent === null) { return undefined; } else { _x2 = parent; _x3 = property; _x4 = receiver; _again = true; desc = parent = undefined; continue _function; } } else if ("value" in desc) { return desc.value; } else { var getter = desc.get; if (getter === undefined) { return undefined; } return getter.call(receiver); } } };
 
 exports["default"] = loadKinto;
 
@@ -2003,14 +2003,14 @@ var BaseAdapter = (function () {
     }
 
     /**
-     * Import given records.
+     * Load a dump of records exported from a server.
      *
      * @abstract
      * @return {Promise}
      */
   }, {
-    key: "import",
-    value: function _import(records) {
+    key: "loadDump",
+    value: function loadDump(records) {
       throw new Error("Not Implemented.");
     }
   }]);
@@ -2505,7 +2505,7 @@ function createUUIDSchema() {
     },
 
     validate: function validate(id) {
-      return (0, _utils.isUUID4)(id);
+      return (0, _utils.isUUID)(id);
     }
   };
 }
@@ -3249,46 +3249,80 @@ var Collection = (function () {
     }
 
     /**
-     * Synchronize remote and local data. The promise will resolve with a
-     * {@link SyncResultObject}, though will reject:
+     * Load a list of records already synced with the remote server.
      *
-     * - if the server is currently backed off;
-     * - if the server has been detected flushed.
-     *
-     * Options:
-     * - {Object} headers: HTTP headers to attach to outgoing requests.
-     * - {Collection.strategy} strategy: See {@link Collection.strategy}.
-     * - {Boolean} ignoreBackoff: Force synchronization even if server is currently
-     *   backed off.
-     *
+     * @param  {Array} records.
      * @param  {Object} options Options.
      * @return {Promise}
      */
   }, {
-    key: "import",
-    value: function _import(records) {
+    key: "loadDump",
+    value: function loadDump(records) {
       var reject = msg => Promise.reject(new Error(msg));
       if (!(records instanceof Array)) {
         return reject("Records is not an array.");
       }
 
-      if (!records.every(record => {
-        return record.id && this.idSchema.validate(record.id);
-      })) {
-        return reject("Record has invalid ID.");
+      var _iteratorNormalCompletion2 = true;
+      var _didIteratorError2 = false;
+      var _iteratorError2 = undefined;
+
+      try {
+        for (var _iterator2 = records[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
+          var record = _step2.value;
+
+          if (!record.id || !this.idSchema.validate(record.id)) {
+            return reject("Record has invalid ID: " + JSON.stringify(record));
+          }
+
+          if (!record.last_modified) {
+            return reject("Record has no last_modified value: " + JSON.stringify(record));
+          }
+        }
+
+        // Fetch all existing records from local database,
+        // and skip those who are newer or not marked as synced.
+      } catch (err) {
+        _didIteratorError2 = true;
+        _iteratorError2 = err;
+      } finally {
+        try {
+          if (!_iteratorNormalCompletion2 && _iterator2["return"]) {
+            _iterator2["return"]();
+          }
+        } finally {
+          if (_didIteratorError2) {
+            throw _iteratorError2;
+          }
+        }
       }
 
-      if (!records.every(record => record.last_modified)) {
-        return reject("Record has no last_modified value.");
-      }
-
-      var newRecords = records.map(record => {
-        return Object.assign({}, record, {
-          _status: "synced"
+      return this.list({}, { includeDeleted: true }).then(res => {
+        return res.data.reduce((acc, record) => {
+          acc[record.id] = record;
+          return acc;
+        }, {});
+      }).then(existingById => {
+        return records.filter(record => {
+          var localRecord = existingById[record.id];
+          var shouldKeep =
+          // No local record with this id.
+          localRecord === undefined ||
+          // Or local record is synced
+          localRecord._status === "synced" &&
+          // And was synced from server
+          localRecord.last_modified !== undefined &&
+          // And is older than imported one.
+          record.last_modified > localRecord.last_modified;
+          return shouldKeep;
         });
-      });
-
-      return this.db["import"](newRecords);
+      }).then(newRecords => {
+        return newRecords.map(record => {
+          return Object.assign({}, record, {
+            _status: "synced"
+          });
+        });
+      }).then(newRecords => this.db.loadDump(newRecords));
     }
   }, {
     key: "name",
@@ -3563,12 +3597,12 @@ exports.sortObjects = sortObjects;
 exports.filterObjects = filterObjects;
 exports.reduceRecords = reduceRecords;
 exports.partition = partition;
-exports.isUUID4 = isUUID4;
+exports.isUUID = isUUID;
 exports.waterfall = waterfall;
 
 var _assert = require("assert");
 
-var RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+var RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Deeply checks if two structures are equals.
@@ -3696,13 +3730,13 @@ function partition(array, n) {
 }
 
 /**
- * Checks if a string is an UUID, according to RFC4122.
+ * Checks if a string is an UUID.
  *
  * @param  {String} uuid The uuid to validate.
  * @return {Boolean}
  */
 
-function isUUID4(uuid) {
+function isUUID(uuid) {
   return RE_UUID.test(uuid);
 }
 
