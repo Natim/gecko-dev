@@ -207,7 +207,6 @@ function test_collection_operations() {
     do_check_eq(lastModified, 1458796543);
     yield adapter.close();
   });
-
 }
 
 // test kinto db setup and operations in various scenarios
