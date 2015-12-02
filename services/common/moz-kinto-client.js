@@ -373,6 +373,7 @@ function loadKinto() {
 
   var EventEmitter = _Cu$import.EventEmitter;
 
+  Cu["import"]("resource://gre/modules/Timer.jsm");
   Cu.importGlobalProperties(['fetch']);
 
   var KintoFX = (function (_KintoBase) {
@@ -3446,9 +3447,21 @@ var HTTP = (function () {
     }
 
     /**
+     * Default options.
+     *
+     * @type {Object}
+     */
+  }, {
+    key: "defaultOptions",
+    get: function get() {
+      return { timeout: 5000, requestMode: "cors" };
+    }
+
+    /**
      * Constructor.
      *
      * Options:
+     * - {Number} timeout      The request timeout in ms (default: `5000`).
      * - {String} requestMode  The HTTP request mode (default: `"cors"`).
      *
      * @param {EventEmitter} events  The event handler.
@@ -3457,7 +3470,7 @@ var HTTP = (function () {
   }]);
 
   function HTTP(events) {
-    var options = arguments.length <= 1 || arguments[1] === undefined ? { requestMode: "cors" } : arguments[1];
+    var options = arguments.length <= 1 || arguments[1] === undefined ? {} : arguments[1];
 
     _classCallCheck(this, HTTP);
 
@@ -3471,12 +3484,20 @@ var HTTP = (function () {
     }
     this.events = events;
 
+    options = Object.assign({}, HTTP.defaultOptions, options);
+
     /**
      * The request mode.
      * @see  https://fetch.spec.whatwg.org/#requestmode
      * @type {String}
      */
     this.requestMode = options.requestMode;
+
+    /**
+     * The request timeout.
+     * @type {Number}
+     */
+    this.timeout = options.timeout;
   }
 
   /**
@@ -3503,11 +3524,29 @@ var HTTP = (function () {
       var response = undefined,
           status = undefined,
           statusText = undefined,
-          headers = undefined;
+          headers = undefined,
+          _timeoutId = undefined,
+          hasTimedout = undefined;
       // Ensure default request headers are always set
       options.headers = Object.assign({}, HTTP.DEFAULT_REQUEST_HEADERS, options.headers);
       options.mode = this.requestMode;
-      return fetch(url, options).then(res => {
+      return new Promise((resolve, reject) => {
+        _timeoutId = setTimeout(() => {
+          hasTimedout = true;
+          reject(new Error("Request timeout."));
+        }, this.timeout);
+        fetch(url, options).then(res => {
+          if (!hasTimedout) {
+            clearTimeout(_timeoutId);
+            resolve(res);
+          }
+        })["catch"](err => {
+          if (!hasTimedout) {
+            clearTimeout(_timeoutId);
+            reject(err);
+          }
+        });
+      }).then(res => {
         response = res;
         headers = res.headers;
         status = res.status;
