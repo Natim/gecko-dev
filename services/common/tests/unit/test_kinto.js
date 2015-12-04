@@ -246,7 +246,7 @@ add_task(function* test_loadDump_should_not_overwrite_unsynced_records(){
   try {
     yield collection.db.open();
     const recordId = "41b71c13-17e9-4ee3-9268-6a41abf9730f";
-    yield collection.create({id: recordId, title: "foo"});
+    yield collection.create({id: recordId, title: "foo"}, {useRecordId: true});
     const record = {id: recordId, title: "bar", last_modified: 1457896541};
     let impactedRecords = yield collection.loadDump([record]);
     do_check_eq(impactedRecords.length, 0);

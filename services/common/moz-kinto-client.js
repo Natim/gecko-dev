@@ -234,6 +234,17 @@ var FirefoxAdapter = (function (_BaseAdapter) {
         return records;
       });
     }
+
+    /**
+     * Load a list of records into the local database.
+     *
+     * Note: The adapter is not in charge of filtering the already imported
+     * records. This is done in `Collection#loadDump()`, as a common behaviour
+     * between every adapters.
+     *
+     * @param  {Array} records.
+     * @return {Array} imported records.
+     */
   }, {
     key: "loadDump",
     value: function loadDump(records) {
@@ -3252,15 +3263,18 @@ var Collection = (function () {
     /**
      * Load a list of records already synced with the remote server.
      *
+     * The local records which are unsynced or whose timestamp is either missing
+     * or superior to those being loaded will be ignored.
+     *
      * @param  {Array} records.
      * @param  {Object} options Options.
-     * @return {Promise}
+     * @return {Promise} with the effectively imported records.
      */
   }, {
     key: "loadDump",
     value: function loadDump(records) {
       var reject = msg => Promise.reject(new Error(msg));
-      if (!(typeof records.sort == 'function')) {
+      if (!Array.isArray(records)) {
         return reject("Records is not an array.");
       }
 
