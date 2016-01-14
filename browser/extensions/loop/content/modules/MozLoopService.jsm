@@ -175,9 +175,8 @@ XPCOMUtils.defineLazyServiceGetter(this, "gDNSService",
 XPCOMUtils.defineLazyServiceGetter(this, "gWM",
                                    "@mozilla.org/appshell/window-mediator;1",
                                    "nsIWindowMediator");
-XPCOMUtils.defineLazyModuleGetter(this, "Kinto",
-                                  "resource://services-common/moz-kinto-client.js");
 
+const Kinto = loadKinto();
 
 // Create a new instance of the ConsoleAPI so we can control the maxLogLevel with a pref.
 XPCOMUtils.defineLazyGetter(this, "log", () => {
@@ -809,7 +808,10 @@ var MozLoopServiceInternal = {
     let collectionName = "fr"; // XXX: this.locale getter can help
     let locales = db.collection(collectionName);
 
-    return locales.sync()
+    return locales.db.open()
+      .then(() => {
+        return locales.sync();
+      })
       .then(() => {
         return locales.list();
       })
@@ -822,6 +824,9 @@ var MozLoopServiceInternal = {
         // Supply the strings from the branding bundle on a per-need basis.
         // Unfortunately the `brandShortName` string is used by Loop with a lowercase 'N'.
         gLocalizedStrings.set("brandShortname", brandBundle.GetStringFromName("brandShortName"));
+      })
+      .then(() => {
+        return locales.db.close();
       });
   },
 
