@@ -106,6 +106,7 @@ Cu.import("resource://gre/modules/osfile.jsm", this);
 Cu.import("resource://gre/modules/Task.jsm");
 Cu.import("resource://gre/modules/Timer.jsm");
 Cu.import("resource://gre/modules/FxAccountsOAuthClient.jsm");
+Cu.import("resource://services-common/moz-kinto-client.js");
 
 Cu.importGlobalProperties(["URL"]);
 
@@ -174,6 +175,9 @@ XPCOMUtils.defineLazyServiceGetter(this, "gDNSService",
 XPCOMUtils.defineLazyServiceGetter(this, "gWM",
                                    "@mozilla.org/appshell/window-mediator;1",
                                    "nsIWindowMediator");
+XPCOMUtils.defineLazyModuleGetter(this, "Kinto",
+                                  "resource://services-common/moz-kinto-client.js");
+
 
 // Create a new instance of the ConsoleAPI so we can control the maxLogLevel with a pref.
 XPCOMUtils.defineLazyGetter(this, "log", () => {
@@ -775,6 +779,7 @@ var MozLoopServiceInternal = {
       return gLocalizedStrings;
     }
 
+    /**
     let stringBundle =
       Services.strings.createBundle("chrome://browser/locale/loop/loop.properties");
 
@@ -789,7 +794,53 @@ var MozLoopServiceInternal = {
     // Unfortunately the `brandShortName` string is used by Loop with a lowercase 'N'.
     gLocalizedStrings.set("brandShortname", brandBundle.GetStringFromName("brandShortName"));
 
+    */
     return gLocalizedStrings;
+  },
+
+  configureGLocalizedStringsWithKinto: function() {
+    let FirefoxAdapter = Kinto.adapters.FirefoxAdapter;
+    let config = {
+       remote: "https://kinto-ota.dev.mozaws.net/v1",
+       bucket: "loop-client",
+       adapter: FirefoxAdapter
+    };
+    let db = new Kinto(config);
+    let collectionName = "fr"; // XXX: this.locale getter can help
+    let locales = db.collection(collectionName);
+
+    return locales.sync()
+      .then(() => {
+        return locales.list();
+      })
+      .then((res) => {
+        res.data.forEach((record) => {
+          gLocalizedStrings.set(record.key, record.value);
+        });
+        let brandBundle =
+          Services.strings.createBundle("chrome://branding/locale/brand.properties");
+        // Supply the strings from the branding bundle on a per-need basis.
+        // Unfortunately the `brandShortName` string is used by Loop with a lowercase 'N'.
+        gLocalizedStrings.set("brandShortname", brandBundle.GetStringFromName("brandShortName"));
+      });
+  },
+
+  configureGLocalizedStrings: function() {
+    let stringBundle =
+      Services.strings.createBundle("chrome://browser/locale/loop/loop.properties");
+
+    let enumerator = stringBundle.getSimpleEnumeration();
+    while (enumerator.hasMoreElements()) {
+      let string = enumerator.getNext().QueryInterface(Ci.nsIPropertyElement);
+      gLocalizedStrings.set(string.key, string.value);
+    }
+    // Supply the strings from the branding bundle on a per-need basis.
+    let brandBundle =
+      Services.strings.createBundle("chrome://branding/locale/brand.properties");
+    // Unfortunately the `brandShortName` string is used by Loop with a lowercase 'N'.
+    gLocalizedStrings.set("brandShortname", brandBundle.GetStringFromName("brandShortName"));
+
+    return Promise.resolve();
   },
 
   /**
@@ -1259,6 +1310,9 @@ this.MozLoopService = {
 
     // Initialise anything that needs it in rooms.
     LoopRooms.init();
+
+    // Start l10n initilization
+    yield MozLoopServiceInternal.configureGLocalizedStringsWithKinto();
 
     // Don't do anything if loop is not enabled.
     if (!Services.prefs.getBoolPref("loop.enabled")) {
