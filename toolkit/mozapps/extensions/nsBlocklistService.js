@@ -898,9 +898,52 @@ Blocklist.prototype = {
   }),
 
   _loadBlocklistFromKinto : function () {
-    // XXX
     this._addonEntries = [];
     this._pluginEntries = [];
+
+    // XXX: load from Kinto database
+    const records = [];
+
+    // Transform Kinto records into block entries.
+    for (let record in records) {
+
+      let blockEntry = {
+        versions: [],
+        prefs: [],
+        blockID: null,
+        attributes: new Map()
+        // Atleast one of EXTENSION_BLOCK_FILTERS must get added to attributes
+      };
+
+      //XXX AMO UI "id", "name", "creator", "homepageURL", "updateURL"
+      // Any filter starting with '/' is interpreted as a regex. So if an attribute
+      // starts with a '/' it must be checked via a regex.
+      function regExpCheck(attr) {
+        return attr.startsWith("/") ? parseRegExp(attr) : attr;
+      }
+      for (let filter of EXTENSION_BLOCK_FILTERS) {
+        let attr = record[filter];
+        if (attr)
+          blockEntry.attributes.set(filter, regExpCheck(attr));
+      }
+
+      // List of impacted preferences (strings).
+      blockEntry.prefs = blockEntry.prefs.concat(record.prefs);
+
+      // List of impacted versions (objects).
+      for (let versionRange of record.versionRange) {
+        blockEntry.versions = record.versionRange.map(buildBlocklistItemData);
+      }
+      // if only the extension ID is specified block all versions of the
+      // extension for the current application.
+      if (blockEntry.versions.length == 0)
+        blockEntry.versions.push(buildBlocklistItemData(null));
+
+      //XXX AMO UI: addonId ?
+      blockEntry.blockID = record.blockID;
+
+      this._addonEntries.push(blockEntry);
+    }
   }
 
   /**
