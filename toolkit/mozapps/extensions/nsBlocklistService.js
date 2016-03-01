@@ -1478,41 +1478,23 @@ Blocklist.prototype = {
                                          Ci.nsITimerCallback]),
 };
 
-/**
- * Helper for constructing a blocklist.
- */
-function BlocklistItemData(versionRangeElement) {
-  var versionRange = this.getBlocklistVersionRange(versionRangeElement);
-  this.minVersion = versionRange.minVersion;
-  this.maxVersion = versionRange.maxVersion;
-  if (versionRangeElement && versionRangeElement.hasAttribute("severity"))
-    this.severity = versionRangeElement.getAttribute("severity");
-  else
-    this.severity = DEFAULT_SEVERITY;
-  if (versionRangeElement && versionRangeElement.hasAttribute("vulnerabilitystatus")) {
-    this.vulnerabilityStatus = versionRangeElement.getAttribute("vulnerabilitystatus");
-  } else {
-    this.vulnerabilityStatus = VULNERABILITYSTATUS_NONE;
-  }
-  this.targetApps = { };
-  var found = false;
+function BlocklistItemData(data) {
+  this.minVersion = data.minVersion;
+  this.maxVersion = data.maxVersion;
 
-  if (versionRangeElement) {
-    for (var i = 0; i < versionRangeElement.childNodes.length; ++i) {
-      var targetAppElement = versionRangeElement.childNodes.item(i);
-      if (!(targetAppElement instanceof Ci.nsIDOMElement) ||
-          targetAppElement.localName != "targetApplication")
-        continue;
-      found = true;
-      // default to the current application if id is not provided.
-      var appID = targetAppElement.hasAttribute("id") ? targetAppElement.getAttribute("id") : gApp.ID;
-      this.targetApps[appID] = this.getBlocklistAppVersions(targetAppElement);
-    }
+  this.severity = data.severity ? data.severity : DEFAULT_SEVERITY;
+  this.vulnerabilityStatus = data.vulnerabilityStatus : VULNERABILITYSTATUS_NONE;
+
+  this.targetApps = { }
+  var found = false;
+  for (let versionRange in data.versionRange) {
+    found = true;
+    // default to the current application if id is not provided.
+    var appID = versionRange.id ? versionRange.id : gApp.ID;
+    this.targetApps[appID] = versionRange.targetApplication;
   }
-  // Default to all versions of the current application when no targetApplication
-  // elements were found
   if (!found)
-    this.targetApps[gApp.ID] = this.getBlocklistAppVersions(null);
+    this.targetApps[gApp.ID] = [{ minVersion: null, maxVersion: null }];
 }
 
 BlocklistItemData.prototype = {
@@ -1588,34 +1570,44 @@ BlocklistItemData.prototype = {
 
     return false;
   },
+};
 
-  /**
-   * Retrieves a version range (e.g. minVersion and maxVersion) for a
-   * blocklist item's targetApplication element.
-   * @param   targetAppElement
-   *          A targetApplication blocklist element.
-   * @returns An array of JS objects with the following properties:
-   *          "minVersion"  The minimum version in a version range (default = null).
-   *          "maxVersion"  The maximum version in a version range (default = null).
-   */
-  getBlocklistAppVersions: function(targetAppElement) {
-    var appVersions = [ ];
 
-    if (targetAppElement) {
+function buildBlocklistItemData(versionRangeElement) {
+  const data = getBlocklistVersionRange(versionRangeElement);
+
+  if (versionRangeElement && versionRangeElement.hasAttribute("severity"))
+    data.severity = versionRangeElement.getAttribute("severity");
+  if (versionRangeElement && versionRangeElement.hasAttribute("vulnerabilitystatus")) {
+    data.vulnerabilityStatus = versionRangeElement.getAttribute("vulnerabilitystatus");
+
+  data.targetApplication = { };
+  if (versionRangeElement) {
+    for (var i = 0; i < versionRangeElement.childNodes.length; ++i) {
+      var targetAppElement = versionRangeElement.childNodes.item(i);
+      if (!(targetAppElement instanceof Ci.nsIDOMElement) ||
+          targetAppElement.localName != "targetApplication")
+        continue;
+
+      var appVersions = [ ];
       for (var i = 0; i < targetAppElement.childNodes.length; ++i) {
         var versionRangeElement = targetAppElement.childNodes.item(i);
         if (!(versionRangeElement instanceof Ci.nsIDOMElement) ||
             versionRangeElement.localName != "versionRange")
           continue;
-        appVersions.push(this.getBlocklistVersionRange(versionRangeElement));
+        appVersions.push(getBlocklistVersionRange(versionRangeElement));
+      }
+      // return minVersion = null and maxVersion = null if no specific versionRange
+      // elements were found
+      if (appVersions.length == 0)
+        appVersions.push(getBlocklistVersionRange(null));
+
+      if (targetAppElement.hasAttribute("id")) {
+        data.targetApplication.id = targetAppElement.getAttribute("id");
       }
     }
-    // return minVersion = null and maxVersion = null if no specific versionRange
-    // elements were found
-    if (appVersions.length == 0)
-      appVersions.push(this.getBlocklistVersionRange(null));
-    return appVersions;
-  },
+  }
+  return new BlocklistItemData(data);
 
   /**
    * Retrieves a version range (e.g. minVersion and maxVersion) for a blocklist
@@ -1626,7 +1618,7 @@ BlocklistItemData.prototype = {
    *          "minVersion"  The minimum version in a version range (default = null).
    *          "maxVersion"  The maximum version in a version range (default = null).
    */
-  getBlocklistVersionRange: function(versionRangeElement) {
+  function getBlocklistVersionRange(versionRangeElement) {
     var minVersion = null;
     var maxVersion = null;
     if (!versionRangeElement)
