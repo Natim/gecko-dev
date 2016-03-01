@@ -932,7 +932,9 @@ Blocklist.prototype = {
 
       // List of impacted versions (objects).
       for (let versionRange of record.versionRange) {
-        blockEntry.versions = record.versionRange.map(buildBlocklistItemData);
+        blockEntry.versions = record.versionRange.map(function (v) {
+          return new BlocklistItemData(v);
+        });
       }
       // if only the extension ID is specified block all versions of the
       // extension for the current application.
@@ -944,7 +946,7 @@ Blocklist.prototype = {
 
       this._addonEntries.push(blockEntry);
     }
-  }
+  },
 
   /**
    * Parse XML content and populate in-memory blocklists.
@@ -1091,12 +1093,12 @@ Blocklist.prototype = {
         }
       }
       else if (childElement.localName === "versionRange")
-        blockEntry.versions.push(new BlocklistItemData(childElement));
+        blockEntry.versions.push(buildBlocklistItemData(childElement));
     }
     // if only the extension ID is specified block all versions of the
     // extension for the current application.
     if (blockEntry.versions.length == 0)
-      blockEntry.versions.push(new BlocklistItemData(null));
+      blockEntry.versions.push(buildBlocklistItemData(null));
 
     blockEntry.blockID = blocklistElement.getAttribute("blockID");
 
@@ -1130,7 +1132,7 @@ Blocklist.prototype = {
         }
       }
       if (matchElement.localName == "versionRange") {
-        blockEntry.versions.push(new BlocklistItemData(matchElement));
+        blockEntry.versions.push(buildBlocklistItemData(matchElement));
       }
       else if (matchElement.localName == "infoURL") {
         blockEntry.infoURL = matchElement.textContent;
@@ -1141,7 +1143,7 @@ Blocklist.prototype = {
       return;
     // Add a default versionRange if there wasn't one specified
     if (blockEntry.versions.length == 0)
-      blockEntry.versions.push(new BlocklistItemData(null));
+      blockEntry.versions.push(buildBlocklistItemData(null));
 
     blockEntry.blockID = blocklistElement.getAttribute("blockID");
 
@@ -1483,7 +1485,7 @@ function BlocklistItemData(data) {
   this.maxVersion = data.maxVersion;
 
   this.severity = data.severity ? data.severity : DEFAULT_SEVERITY;
-  this.vulnerabilityStatus = data.vulnerabilityStatus : VULNERABILITYSTATUS_NONE;
+  this.vulnerabilityStatus = data.vulnerabilityStatus ? data.vulnerabilityStatus : VULNERABILITYSTATUS_NONE;
 
   this.targetApps = { }
   var found = false;
@@ -1578,7 +1580,7 @@ function buildBlocklistItemData(versionRangeElement) {
 
   if (versionRangeElement && versionRangeElement.hasAttribute("severity"))
     data.severity = versionRangeElement.getAttribute("severity");
-  if (versionRangeElement && versionRangeElement.hasAttribute("vulnerabilitystatus")) {
+  if (versionRangeElement && versionRangeElement.hasAttribute("vulnerabilitystatus"))
     data.vulnerabilityStatus = versionRangeElement.getAttribute("vulnerabilitystatus");
 
   data.targetApplication = { };
