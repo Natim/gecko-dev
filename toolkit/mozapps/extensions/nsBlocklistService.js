@@ -14,6 +14,9 @@ Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 Components.utils.import("resource://gre/modules/Services.jsm");
 Components.utils.import("resource://gre/modules/AppConstants.jsm");
 
+//XXX debug/hack:
+const console = (Components.utils.import("resource://gre/modules/devtools/Console.jsm", {})).console;
+
 try {
   // AddonManager.jsm doesn't allow itself to be imported in the child
   // process. We're used in the child process (for now), so guard against
@@ -47,6 +50,7 @@ const PREF_BLOCKLIST_LEVEL            = "extensions.blocklist.level";
 const PREF_BLOCKLIST_PINGCOUNTTOTAL   = "extensions.blocklist.pingCountTotal";
 const PREF_BLOCKLIST_PINGCOUNTVERSION = "extensions.blocklist.pingCountVersion";
 const PREF_BLOCKLIST_SUPPRESSUI       = "extensions.blocklist.suppressUI";
+const PREF_BLOCKLIST_VIA_KINTO        = "extensions.blocklist.via.kinto";
 const PREF_ONECRL_VIA_AMO             = "security.onecrl.via.amo";
 const PREF_PLUGINS_NOTIFYUSER         = "plugins.update.notifyUser";
 const PREF_GENERAL_USERAGENT_LOCALE   = "general.useragent.locale";
@@ -355,6 +359,10 @@ Blocklist.prototype = {
         case PREF_BLOCKLIST_LEVEL:
           gBlocklistLevel = Math.min(getPref("getIntPref", PREF_BLOCKLIST_LEVEL, DEFAULT_LEVEL),
                                      MAX_BLOCK_LEVEL);
+          this._blocklistUpdated(null, null);
+          break;
+        case PREF_BLOCKLIST_VIA_KINTO:
+          this._loadBlocklist();
           this._blocklistUpdated(null, null);
           break;
       }
@@ -689,6 +697,15 @@ Blocklist.prototype = {
   _loadBlocklist: function() {
     this._addonEntries = [];
     this._pluginEntries = [];
+
+    // Rely on Kinto to obtain the blocklist.
+    var viaKinto = getPref("getBoolPref", PREF_BLOCKLIST_VIA_KINTO, false);
+    if (viaKinto) {
+      this._loadBlocklistFromKinto();
+      return;
+    }
+
+    // Rely on XML on disk.
     var profFile = FileUtils.getFile(KEY_PROFILEDIR, [FILE_BLOCKLIST]);
     if (profFile.exists()) {
       this._loadBlocklistFromFile(profFile);
@@ -838,6 +855,9 @@ Blocklist.prototype = {
     this._preloadedBlocklistContent = null;
   },
 
+  /**
+   * Preload the XML file content (as text) asynchronously.
+   */
   _preloadBlocklist: Task.async(function*() {
     let profPath = OS.Path.join(OS.Constants.Path.profileDir, FILE_BLOCKLIST);
     try {
@@ -877,6 +897,15 @@ Blocklist.prototype = {
     }
   }),
 
+  _loadBlocklistFromKinto : function () {
+    // XXX
+    this._addonEntries = [];
+    this._pluginEntries = [];
+  }
+
+  /**
+   * Parse XML content and populate in-memory blocklists.
+   */
   _loadBlocklistFromString : function(text) {
     try {
       var parser = Cc["@mozilla.org/xmlextras/domparser;1"].
