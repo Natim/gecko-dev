@@ -13,9 +13,10 @@ const Cr = Components.results;
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 Components.utils.import("resource://gre/modules/Services.jsm");
 Components.utils.import("resource://gre/modules/AppConstants.jsm");
+Components.utils.import("resource://services-common/KintoAddonBlocklist.js");
 
 //XXX debug/hack:
-const console = (Components.utils.import("resource://gre/modules/devtools/Console.jsm", {})).console;
+const console = (Components.utils.import("resource://gre/modules/Console.jsm", {})).console;
 
 try {
   // AddonManager.jsm doesn't allow itself to be imported in the child
@@ -900,6 +901,9 @@ Blocklist.prototype = {
   _loadBlocklistFromKinto : function () {
     this._addonEntries = [];
     this._pluginEntries = [];
+
+    AddonBlocklistClient.loadList();
+    PluginBlocklistClient.loadList();
 
     // XXX: load from Kinto database
     const records = [];

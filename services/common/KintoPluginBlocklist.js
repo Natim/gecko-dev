@@ -4,7 +4,7 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["AddonBlocklistClient"];
+this.EXPORTED_SYMBOLS = ["PluginBlocklistClient"];
 
 const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
@@ -15,14 +15,14 @@ Cu.import("resource://gre/modules/Task.jsm");
 
 const PREF_KINTO_BASE = "services.kinto.base";
 const PREF_KINTO_BUCKET = "services.kinto.bucket";
-const PREF_KINTO_ADDONS_COLLECTION = "services.kinto.addons.collection";
-const PREF_KINTO_ADDONS_CHECKED_SECONDS = "services.kinto.addons.checked";
+const PREF_KINTO_PLUGINS_COLLECTION = "services.kinto.plugins.collection";
+const PREF_KINTO_PLUGINS_CHECKED_SECONDS = "services.kinto.plugins.checked";
 
 //XXX debug/hack:
 const console = (Components.utils.import("resource://gre/modules/Console.jsm", {})).console;
 
-// A Kinto based client to keep the Addons blocklist up to date.
-function AddonBlocklistClient() {
+// A Kinto based client to keep the Plugins blocklist up to date.
+function PluginBlocklistClient() {
   const base = Services.prefs.getCharPref(PREF_KINTO_BASE);
   const bucket = Services.prefs.getCharPref(PREF_KINTO_BUCKET);
 
@@ -39,8 +39,8 @@ function AddonBlocklistClient() {
   };
 
   const db = new Kinto(config);
-  const collectionName = Services.prefs.getCharPref(PREF_KINTO_ADDONS_COLLECTION,
-                                                    "addons");
+  const collectionName = Services.prefs.getCharPref(PREF_KINTO_PLUGINS_COLLECTION,
+                                                    "plugins");
   const blocklist = db.collection(collectionName);
 
   this.loadList = function () {
@@ -61,7 +61,7 @@ function AddonBlocklistClient() {
   this.maybeSync = function(lastModified, serverTime) {
     let updateLastCheck = function() {
       let checkedServerTimeInSeconds = Math.round(serverTime / 1000);
-      Services.prefs.setIntPref(PREF_KINTO_ADDONS_CHECKED_SECONDS,
+      Services.prefs.setIntPref(PREF_KINTO_PLUGINS_CHECKED_SECONDS,
                                 checkedServerTimeInSeconds);
     }
 
@@ -79,7 +79,7 @@ function AddonBlocklistClient() {
         yield blocklist.sync();
         let list = yield blocklist.list();
         for (let item of list.data) {
-          // Update addons blocklist
+          // Update plugins blocklist
         }
         updateLastCheck();
       } finally {
@@ -89,4 +89,4 @@ function AddonBlocklistClient() {
   }
 }
 
-this.AddonBlocklistClient = new AddonBlocklistClient();
+this.PluginBlocklistClient = new PluginBlocklistClient();
