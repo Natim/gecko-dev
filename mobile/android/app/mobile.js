@@ -242,7 +242,11 @@ pref("extensions.blocklist.detailsURL", "https://www.mozilla.com/%LOCALE%/blockl
 pref("services.kinto.base", "https://firefox.settings.services.mozilla.com/v1");
 pref("services.kinto.bucket", "blocklists");
 pref("services.kinto.onecrl.collection", "certificates");
+pref("services.kinto.addons.collection", "addons");
+pref("services.kinto.plugins.collection", "plugins");
 pref("services.kinto.onecrl.checked", 0);
+pref("services.kinto.addons.checked", 0);
+pref("services.kinto.plugins.checked", 0);
 
 /* Don't let XPIProvider install distribution add-ons; we do our own thing on mobile. */
 pref("extensions.installDistroAddons", false);

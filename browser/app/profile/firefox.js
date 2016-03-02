@@ -66,7 +66,11 @@ pref("extensions.blocklist.itemURL", "https://blocklist.addons.mozilla.org/%LOCA
 pref("services.kinto.base", "https://firefox.settings.services.mozilla.com/v1");
 pref("services.kinto.bucket", "blocklists");
 pref("services.kinto.onecrl.collection", "certificates");
+pref("services.kinto.addons.collection", "addons");
+pref("services.kinto.plugins.collection", "plugins");
 pref("services.kinto.onecrl.checked", 0);
+pref("services.kinto.addons.checked", 0);
+pref("services.kinto.plugins.checked", 0);
 
 pref("extensions.update.autoUpdateDefault", true);
 
