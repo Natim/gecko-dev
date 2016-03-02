@@ -16,8 +16,8 @@ EXTRA_COMPONENTS += [
 EXTRA_JS_MODULES['services-common'] += [
     'async.js',
     'KintoAddonBlocklist.js',
-    'KintoPluginBlocklist.js',
     'KintoCertificateBlocklist.js',
+    'KintoPluginBlocklist.js',
     'logmanager.js',
     'moz-kinto-client.js',
     'observers.js',
