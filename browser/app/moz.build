@@ -19,7 +19,7 @@ SOURCES += [
     'nsBrowserApp.cpp',
 ]
 
-FINAL_TARGET_FILES += ['blocklist-addons.json', 'blocklist.xml']
+FINAL_TARGET_FILES += ['blocklist-addons.json', 'blocklist-plugins.json', 'blocklist.xml']
 FINAL_TARGET_FILES.defaults.profile += ['profile/prefs.js']
 FINAL_TARGET_FILES.defaults += ['permissions']
 

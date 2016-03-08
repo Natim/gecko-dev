@@ -695,15 +695,35 @@ Blocklist.prototype = {
 
     var loadFromKintoDump = getPref("getBoolPref", PREF_BLOCKLIST_VIA_KINTO, false);
     if (loadFromKintoDump) {
+
       const fileBlocklistAddons = "blocklist-addons.json";
-      var appFile = FileUtils.getFile(KEY_APPDIR, [fileBlocklistAddons]);
-      if (appFile.exists()) {
-        const text = this._loadBlocklistFromFile(appFile);
-        if (text)
-          this._loadBlocklistAddonsFromString(text);
-        return;
+      var jsonFile = FileUtils.getFile(KEY_PROFILEDIR, [fileBlocklistAddons]);
+      if (!jsonFile.exists()) {
+        var appFile = FileUtils.getFile(KEY_APPDIR, [fileBlocklistAddons]);
+        if (!appFile.exists()) {
+          LOG("Blocklist::_loadBlocklist: no addons JSON File found");
+          return;
+        }
+        jsonFile = appFile;
       }
-      LOG("Blocklist::_loadBlocklist: no JSON File found");
+      let text = this._loadBlocklistFromFile(jsonFile);
+      if (text)
+        this._loadBlocklistAddonsFromString(text);
+
+      // XXX refactor :)
+      const fileBlocklistPlugins = "blocklist-plugins.json";
+      var jsonFile = FileUtils.getFile(KEY_PROFILEDIR, [fileBlocklistPlugins]);
+      if (!jsonFile.exists()) {
+        var appFile = FileUtils.getFile(KEY_APPDIR, [fileBlocklistPlugins]);
+        if (!appFile.exists()) {
+          LOG("Blocklist::_loadBlocklist: no plugins JSON File found");
+          return;
+        }
+        jsonFile = appFile;
+      }
+      text = this._loadBlocklistFromFile(jsonFile);
+      if (text)
+        this._loadBlocklistPluginsFromString(text);
     }
     else {
       var profFile = FileUtils.getFile(KEY_PROFILEDIR, [FILE_BLOCKLIST]);
@@ -721,14 +741,13 @@ Blocklist.prototype = {
       }
       LOG("Blocklist::_loadBlocklist: no XML File found");
     }
-
   },
 
   _loadBlocklistAddonsFromString: function (text) {
     try {
       const addonsEntries = JSON.parse("" + text);
       for(let entry of addonsEntries.data) {
-        const blockEntry = blockEntryFromKinto(entry);
+        const blockEntry = addonBlockEntryFromKinto(entry);
         this._addonEntries.push(blockEntry);
       }
       console.log(this._addonEntries.length, ' addons entries');
@@ -740,15 +759,18 @@ Blocklist.prototype = {
   },
 
   _loadBlocklistPluginsFromString: function (text) {
+    // XXX refactor with _loadBlocklistAddonsFromString :)
     try {
       const pluginsEntries = JSON.parse("" + text);
       for(let entry of pluginsEntries.data) {
-        const blockEntry = {};
-        this._pluginEntries.append(blockEntry);
+        const blockEntry = pluginBlockEntryFromKinto(entry);
+        this._pluginEntries.push(blockEntry);
       }
+      console.log(this._pluginEntries.length, ' plugins entries');
     }
     catch (e) {
-      LOG("Blocklist::_loadBlocklistAddonsFromString: Could not parse JSON " + e);
+      console.log(e, e.stack);
+      LOG("Blocklist::_loadBlocklistPluginsFromString: Could not parse JSON " + e);
     }
   },
 
@@ -1456,7 +1478,7 @@ Blocklist.prototype = {
 };
 
 
-function blockEntryFromKinto(data) {
+function addonBlockEntryFromKinto(data) {
   /*
   {
     "prefs": [],
@@ -1514,6 +1536,66 @@ function blockEntryFromKinto(data) {
   }
   if (blockEntry.versions.length == 0)
     blockEntry.versions.push(new BlocklistItemData(null));
+
+  return blockEntry;
+}
+
+function pluginBlockEntryFromKinto(data) {
+  /*
+  {
+    "matchFilename": "JavaPlugin2_NPAPI\\.plugin",
+    "blockID": "p123",
+    "id": "bdcf0717-a873-adbf-7603-83a49fb996bc",
+    "last_modified": 1457434851748,
+    "versionRange": [{
+      "targetApplication": [{
+        "minVersion": "0.1",
+        "guid": "{ec8030f7-c20a-464f-9b0e-13a3a9e97384}",
+        "maxVersion": "17.*"
+      }],
+      "maxVersion": "14.2.0",
+      "minVersion": "0",
+      "severity": "1"
+    }]
+  }
+  */
+  const blockEntry = {
+    matches: {},
+    versions: [],
+    blockID: null,
+    infoURL: null,
+  };
+
+  // var hasMatch = false;
+  // for (var x = 0; x < matchNodes.length; ++x) {
+  //   var matchElement = matchNodes.item(x);
+  //   if (!(matchElement instanceof Ci.nsIDOMElement))
+  //     continue;
+  //   if (matchElement.localName == "match") {
+  //     var name = matchElement.getAttribute("name");
+  //     var exp = matchElement.getAttribute("exp");
+  //     try {
+  //       blockEntry.matches[name] = new RegExp(exp, "m");
+  //       hasMatch = true;
+  //     } catch (e) {
+  //       // Ignore invalid regular expressions
+  //     }
+  //   }
+  //   if (matchElement.localName == "versionRange") {
+  //     blockEntry.versions.push(new BlocklistItemData(matchElement));
+  //   }
+  //   else if (matchElement.localName == "infoURL") {
+  //     blockEntry.infoURL = matchElement.textContent;
+  //   }
+  // }
+  // // Plugin entries require *something* to match to an actual plugin
+  // if (!hasMatch)
+  //   return;
+  // // Add a default versionRange if there wasn't one specified
+  // if (blockEntry.versions.length == 0)
+  //   blockEntry.versions.push(new BlocklistItemData(null));
+
+  blockEntry.blockID = data.blockID;
 
   return blockEntry;
 }
