@@ -14,6 +14,8 @@ Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 Components.utils.import("resource://gre/modules/Services.jsm");
 Components.utils.import("resource://gre/modules/AppConstants.jsm");
 
+const console = (Components.utils.import("resource://gre/modules/Console.jsm", {})).console;
+
 try {
   // AddonManager.jsm doesn't allow itself to be imported in the child
   // process. We're used in the child process (for now), so guard against
@@ -48,6 +50,7 @@ const PREF_BLOCKLIST_PINGCOUNTTOTAL   = "extensions.blocklist.pingCountTotal";
 const PREF_BLOCKLIST_PINGCOUNTVERSION = "extensions.blocklist.pingCountVersion";
 const PREF_BLOCKLIST_SUPPRESSUI       = "extensions.blocklist.suppressUI";
 const PREF_ONECRL_VIA_AMO             = "security.onecrl.via.amo";
+const PREF_BLOCKLIST_VIA_KINTO        = "security.blocklist.via.kinto";
 const PREF_PLUGINS_NOTIFYUSER         = "plugins.update.notifyUser";
 const PREF_GENERAL_USERAGENT_LOCALE   = "general.useragent.locale";
 const PREF_APP_DISTRIBUTION           = "distribution.id";
@@ -689,18 +692,174 @@ Blocklist.prototype = {
   _loadBlocklist: function() {
     this._addonEntries = [];
     this._pluginEntries = [];
-    var profFile = FileUtils.getFile(KEY_PROFILEDIR, [FILE_BLOCKLIST]);
-    if (profFile.exists()) {
-      this._loadBlocklistFromFile(profFile);
-      return;
+
+    var loadFromKintoDump = getPref("getBoolPref", PREF_BLOCKLIST_VIA_KINTO, false);
+    if (loadFromKintoDump) {
+      const fileBlocklistAddons = "blocklist-addons.json";
+      var appFile = FileUtils.getFile(KEY_APPDIR, [fileBlocklistAddons]);
+      if (appFile.exists()) {
+        const text = this._loadBlocklistFromFile(appFile);
+        if (text)
+          this._loadBlocklistAddonsFromString(text);
+        return;
+      }
+      LOG("Blocklist::_loadBlocklist: no JSON File found");
     }
-    var appFile = FileUtils.getFile(KEY_APPDIR, [FILE_BLOCKLIST]);
-    if (appFile.exists()) {
-      this._loadBlocklistFromFile(appFile);
-      return;
+    else {
+      var profFile = FileUtils.getFile(KEY_PROFILEDIR, [FILE_BLOCKLIST]);
+      if (profFile.exists()) {
+        const text = this._loadBlocklistFromFile(profFile);
+        if (text)
+          this._loadBlocklistFromString(text);
+      }
+      var appFile = FileUtils.getFile(KEY_APPDIR, [FILE_BLOCKLIST]);
+      if (appFile.exists()) {
+        const text = this._loadBlocklistFromFile(appFile);
+        if (text)
+          this._loadBlocklistFromString(text);
+        return;
+      }
+      LOG("Blocklist::_loadBlocklist: no XML File found");
     }
-    LOG("Blocklist::_loadBlocklist: no XML File found");
+
   },
+
+  _loadBlocklistAddonsFromString: function (text) {
+    try {
+      const addonsEntries = JSON.parse("" + text);
+      for(let entry of addonsEntries.data) {
+        const blockEntry = blockEntryFromKinto(entry);
+        this._addonEntries.push(blockEntry);
+      }
+      console.log(this._addonEntries.length, ' addons entries');
+    }
+    catch (e) {
+      console.log(e, e.stack);
+      LOG("Blocklist::_loadBlocklistAddonsFromString: Could not parse JSON " + e);
+    }
+  },
+
+  _loadBlocklistPluginsFromString: function (text) {
+    try {
+      const pluginsEntries = JSON.parse("" + text);
+      for(let entry of pluginsEntries.data) {
+        const blockEntry = {};
+        this._pluginEntries.append(blockEntry);
+      }
+    }
+    catch (e) {
+      LOG("Blocklist::_loadBlocklistAddonsFromString: Could not parse JSON " + e);
+    }
+  },
+
+  _loadBlocklistFromFile: function(file) {
+    if (!gBlocklistEnabled) {
+      LOG("Blocklist::_loadBlocklistFromFile: blocklist is disabled");
+      return;
+    }
+
+    let telemetry = Services.telemetry;
+
+    // XXX: preload addons/plugins json
+    if (this._isBlocklistPreloaded()) {
+      telemetry.getHistogramById("BLOCKLIST_SYNC_FILE_LOAD").add(false);
+      this._loadBlocklistFromString(this._preloadedBlocklistContent);
+      delete this._preloadedBlocklistContent;
+      return;
+    }
+
+    if (!file.exists()) {
+      LOG("Blocklist::_loadBlocklistFromFile: File does not exist " + file.path);
+      return;
+    }
+
+    telemetry.getHistogramById("BLOCKLIST_SYNC_FILE_LOAD").add(true);
+
+    let text = "";
+    let fstream = null;
+    let cstream = null;
+
+    try {
+      fstream = Components.classes["@mozilla.org/network/file-input-stream;1"]
+                          .createInstance(Components.interfaces.nsIFileInputStream);
+      cstream = Components.classes["@mozilla.org/intl/converter-input-stream;1"]
+                          .createInstance(Components.interfaces.nsIConverterInputStream);
+
+      fstream.init(file, FileUtils.MODE_RDONLY, FileUtils.PERMS_FILE, 0);
+      cstream.init(fstream, "UTF-8", 0, 0);
+
+      let str = {};
+      let read = 0;
+
+      do {
+        read = cstream.readString(0xffffffff, str); // read as much as we can and put it in str.value
+        text += str.value;
+      } while (read != 0);
+    } catch (e) {
+      LOG("Blocklist::_loadBlocklistFromFile: Failed to load file " + e);
+    } finally {
+      if (cstream)
+        cstream.close();
+      if (fstream)
+        fstream.close();
+    }
+
+    return text;
+  },
+
+  _isBlocklistLoaded: function() {
+    return this._addonEntries != null && this._pluginEntries != null;
+  },
+
+  _isBlocklistPreloaded: function() {
+    return this._preloadedBlocklistContent != null;
+  },
+
+  /* Used for testing */
+  _clear: function() {
+    this._addonEntries = null;
+    this._pluginEntries = null;
+    this._preloadedBlocklistContent = null;
+  },
+
+  _preloadBlocklist: Task.async(function*() {
+    let profPath = OS.Path.join(OS.Constants.Path.profileDir, FILE_BLOCKLIST);
+    try {
+      yield this._preloadBlocklistFile(profPath);
+      return;
+    } catch (e) {
+      LOG("Blocklist::_preloadBlocklist: Failed to load XML file " + e)
+    }
+
+    var appFile = FileUtils.getFile(KEY_APPDIR, [FILE_BLOCKLIST]);
+    try{
+      yield this._preloadBlocklistFile(appFile.path);
+      return;
+    } catch (e) {
+      LOG("Blocklist::_preloadBlocklist: Failed to load XML file " + e)
+    }
+
+    LOG("Blocklist::_preloadBlocklist: no XML File found");
+  }),
+
+  _preloadBlocklistFile: Task.async(function*(path){
+    if (this._addonEntries) {
+      // The file has been already loaded.
+      return;
+    }
+
+    if (!gBlocklistEnabled) {
+      LOG("Blocklist::_preloadBlocklistFile: blocklist is disabled");
+      return;
+    }
+
+    let text = yield OS.File.read(path, { encoding: "utf-8" });
+
+    if (!this._addonEntries) {
+      // Store the content only if a sync load has not been performed in the meantime.
+      this._preloadedBlocklistContent = text;
+    }
+  }),
 
   /**
 #    The blocklist XML file looks something like this:
@@ -767,116 +926,6 @@ Blocklist.prototype = {
 #      </certItems>
 #    </blocklist>
    */
-
-  _loadBlocklistFromFile: function(file) {
-    if (!gBlocklistEnabled) {
-      LOG("Blocklist::_loadBlocklistFromFile: blocklist is disabled");
-      return;
-    }
-
-    let telemetry = Services.telemetry;
-
-    if (this._isBlocklistPreloaded()) {
-      telemetry.getHistogramById("BLOCKLIST_SYNC_FILE_LOAD").add(false);
-      this._loadBlocklistFromString(this._preloadedBlocklistContent);
-      delete this._preloadedBlocklistContent;
-      return;
-    }
-
-    if (!file.exists()) {
-      LOG("Blocklist::_loadBlocklistFromFile: XML File does not exist " + file.path);
-      return;
-    }
-
-    telemetry.getHistogramById("BLOCKLIST_SYNC_FILE_LOAD").add(true);
-
-    let text = "";
-    let fstream = null;
-    let cstream = null;
-
-    try {
-      fstream = Components.classes["@mozilla.org/network/file-input-stream;1"]
-                          .createInstance(Components.interfaces.nsIFileInputStream);
-      cstream = Components.classes["@mozilla.org/intl/converter-input-stream;1"]
-                          .createInstance(Components.interfaces.nsIConverterInputStream);
-
-      fstream.init(file, FileUtils.MODE_RDONLY, FileUtils.PERMS_FILE, 0);
-      cstream.init(fstream, "UTF-8", 0, 0);
-
-      let str = {};
-      let read = 0;
-
-      do {
-        read = cstream.readString(0xffffffff, str); // read as much as we can and put it in str.value
-        text += str.value;
-      } while (read != 0);
-    } catch (e) {
-      LOG("Blocklist::_loadBlocklistFromFile: Failed to load XML file " + e);
-    } finally {
-      if (cstream)
-        cstream.close();
-      if (fstream)
-        fstream.close();
-    }
-
-    if (text)
-        this._loadBlocklistFromString(text);
-  },
-
-  _isBlocklistLoaded: function() {
-    return this._addonEntries != null && this._pluginEntries != null;
-  },
-
-  _isBlocklistPreloaded: function() {
-    return this._preloadedBlocklistContent != null;
-  },
-
-  /* Used for testing */
-  _clear: function() {
-    this._addonEntries = null;
-    this._pluginEntries = null;
-    this._preloadedBlocklistContent = null;
-  },
-
-  _preloadBlocklist: Task.async(function*() {
-    let profPath = OS.Path.join(OS.Constants.Path.profileDir, FILE_BLOCKLIST);
-    try {
-      yield this._preloadBlocklistFile(profPath);
-      return;
-    } catch (e) {
-      LOG("Blocklist::_preloadBlocklist: Failed to load XML file " + e)
-    }
-
-    var appFile = FileUtils.getFile(KEY_APPDIR, [FILE_BLOCKLIST]);
-    try{
-      yield this._preloadBlocklistFile(appFile.path);
-      return;
-    } catch (e) {
-      LOG("Blocklist::_preloadBlocklist: Failed to load XML file " + e)
-    }
-
-    LOG("Blocklist::_preloadBlocklist: no XML File found");
-  }),
-
-  _preloadBlocklistFile: Task.async(function*(path){
-    if (this._addonEntries) {
-      // The file has been already loaded.
-      return;
-    }
-
-    if (!gBlocklistEnabled) {
-      LOG("Blocklist::_preloadBlocklistFile: blocklist is disabled");
-      return;
-    }
-
-    let text = yield OS.File.read(path, { encoding: "utf-8" });
-
-    if (!this._addonEntries) {
-      // Store the content only if a sync load has not been performed in the meantime.
-      this._preloadedBlocklistContent = text;
-    }
-  }),
-
   _loadBlocklistFromString : function(text) {
     try {
       var parser = Cc["@mozilla.org/xmlextras/domparser;1"].
@@ -1405,6 +1454,69 @@ Blocklist.prototype = {
                                          Ci.nsIBlocklistService,
                                          Ci.nsITimerCallback]),
 };
+
+
+function blockEntryFromKinto(data) {
+  /*
+  {
+    "prefs": [],
+    "blockID": "i446",
+    "last_modified": 1457434834683,
+    "versionRange": [{
+      "targetApplication": [],
+      "maxVersion": "*",
+      "minVersion": "0",
+      "severity": "1"
+    }],
+    "guid": "{E90FA778-C2B7-41D0-9FA9-3FEC1CA54D66}",
+    "id": "87a5dc56-1fec-ebf2-a09b-6f2cbd4eb2d3"
+  }
+  */
+  const blockEntry = {
+    versions: [],
+    prefs: [],
+    blockID: null,
+    attributes: new Map()
+    // Atleast one of EXTENSION_BLOCK_FILTERS must get added to attributes
+  };
+
+  // Any filter starting with '/' is interpreted as a regex. So if an attribute
+  // starts with a '/' it must be checked via a regex.
+  function regExpCheck(attr) {
+    return attr.startsWith("/") ? parseRegExp(attr) : attr;
+  }
+
+  for (let filter of EXTENSION_BLOCK_FILTERS) {
+    // In Kinto, app `id` is `guid`.
+    if (filter == "id")
+      filter = "guid";
+    let attr = data[filter];
+    if (attr)
+      blockEntry.attributes.set(filter, regExpCheck(attr));
+  }
+
+  blockEntry.prefs = data.prefs;
+  blockEntry.blockID = data.blockID;
+
+  for(let versionRange of data.versionRange) {
+    const itemData = new BlocklistItemData(null);
+    const fields = ['minVersion', 'maxVersion', 'severity', 'vulnerabilityStatus'];
+    for(let field of fields) {
+      if (versionRange[field])
+        itemData[field] = versionRange[field];
+    }
+    for(let targetApplication of versionRange.targetApplication)  {
+      // default to the current application if id is not provided.
+      const appId = targetApplication.id || gApp.ID;
+      itemData.targetApps[appId] = targetApplication;
+    }
+    blockEntry.versions.push(itemData);
+  }
+  if (blockEntry.versions.length == 0)
+    blockEntry.versions.push(new BlocklistItemData(null));
+
+  return blockEntry;
+}
 
 /**
  * Helper for constructing a blocklist.
