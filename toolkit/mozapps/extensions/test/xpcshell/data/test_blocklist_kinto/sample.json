@@ -1,0 +1,50 @@
+{
+    "data": [
+        {
+            "blockID": "i53923",
+            "guid": "LionKiller@jetpack",
+            "id": "9d500963-d45e-3a91-6e32-66f3811b99cc",
+            "last_modified": 1457434774040,
+            "prefs": [],
+            "versionRange": [
+                {
+                    "maxVersion": "*",
+                    "minVersion": "0",
+                    "severity": "3",
+                    "targetApplication": []
+                }
+            ]
+        },
+
+        {
+            "blockID": "i539",
+            "guid": "ScorpionSaver@jetpack",
+            "id": "9d500963-d80e-3a91-6e74-66f3811b99cc",
+            "last_modified": 1457434774040,
+            "prefs": [],
+            "versionRange": [
+                {
+                    "maxVersion": "*",
+                    "minVersion": "0",
+                    "severity": "1",
+                    "targetApplication": []
+                }
+            ]
+        },
+        {
+            "blockID": "i808",
+            "guid": "{c96d1ae6-c4cf-4984-b110-f5f561b33b5a}",
+            "id": "9ccfac91-e463-c30c-f0bd-14143794a8dd",
+            "last_modified": 1457434774125,
+            "prefs": [],
+            "versionRange": [
+                {
+                    "maxVersion": "*",
+                    "minVersion": "0",
+                    "severity": "3",
+                    "targetApplication": []
+                }
+            ]
+        }
+    ]
+}
