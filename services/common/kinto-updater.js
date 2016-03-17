@@ -12,8 +12,11 @@ Cu.importGlobalProperties(['fetch']);
 
 const PREF_KINTO_CHANGES_PATH = "services.kinto.changes.path";
 const PREF_KINTO_BASE = "services.kinto.base";
+const PREF_KINTO_BUCKET = "services.kinto.bucket";
 const PREF_KINTO_LAST_UPDATE = "services.kinto.last_update_seconds";
+const PREF_KINTO_LAST_ETAG = "services.kinto.etag";
 const PREF_KINTO_CLOCK_SKEW_SECONDS = "services.kinto.clock_skew_seconds";
+const PREF_KINTO_ONECRL_COLLECTION = "services.kinto.onecrl.collection";
 
 const kintoClients = {
 };
@@ -33,8 +36,16 @@ this.checkVersions = function() {
     // Right now, we only use the collection name and the last modified info
     let kintoBase = Services.prefs.getCharPref(PREF_KINTO_BASE);
     let changesEndpoint = kintoBase + Services.prefs.getCharPref(PREF_KINTO_CHANGES_PATH);
+    let blocklistsBucket = Services.prefs.getCharPref(PREF_KINTO_BUCKET);
 
-    let response = yield fetch(changesEndpoint);
+    // Use ETag to obtain a `304 Not modified` when no change occured.
+    const lastEtag = Services.prefs.getCharPref(PREF_KINTO_LAST_ETAG, null);
+    const headers = {};
+    if (lastEtag) {
+      headers["If-None-Match"] = lastEtag;
+    }
+
+    let response = yield fetch(changesEndpoint, {headers});
 
     // Record new update time and the difference between local and server time
     let serverTimeMillis = Date.parse(response.headers.get("Date"));
@@ -42,10 +53,20 @@ this.checkVersions = function() {
     Services.prefs.setIntPref(PREF_KINTO_LAST_UPDATE, serverTimeMillis / 1000);
     Services.prefs.setIntPref(PREF_KINTO_CLOCK_SKEW_SECONDS, clockDifference);
 
+    // No changes since last time.
+    if (response.status == 304) {
+      return;
+    }
+
     let versionInfo = yield response.json();
 
     let firstError;
     for (let collectionInfo of versionInfo.data) {
+      // Skip changes that don't concern configured blocklist bucket.
+      if (collectionInfo.bucket != blocklistsBucket) {
+        continue;
+      }
+
       let collection = collectionInfo.collection;
       let kintoClient = kintoClients[collection];
       if (kintoClient && kintoClient.maybeSync) {
@@ -66,6 +87,10 @@ this.checkVersions = function() {
       // cause the promise to reject by throwing the first observed error
       throw firstError;
     }
+
+    // Save current Etag for next poll.
+    const currentEtag = response.headers.get("ETag");
+    Services.prefs.setCharPref(PREF_KINTO_LAST_ETAG, currentEtag);
   });
 };
 
@@ -75,6 +100,5 @@ this.addTestKintoClient = function(name, kintoClient) {
 };
 
 // Add the various things that we know want updates
-kintoClients.certificates =
-  Cu.import("resource://services-common/KintoCertificateBlocklist.js", {})
-  .OneCRLClient;
+const KintoBlocklist = Cu.import("resource://services-common/KintoCertificateBlocklist.js", {});
+kintoClients[Services.prefs.getCharPref(PREF_KINTO_ONECRL_COLLECTION)]  = KintoBlocklist.OneCRLClient;
